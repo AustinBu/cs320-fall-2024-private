@@ -31,7 +31,7 @@ let last_function_standing funcs start pred =
           else iterate tail start pred x max false
         else iterate tail start pred func max true
       else
-        iterate tail start pred func max false
+        iterate tail start pred func max same
     in let x, y = iterate funcs start pred head (-1) false
     in if y = true
       then None
