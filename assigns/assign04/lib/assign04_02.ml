@@ -18,8 +18,12 @@ let rec bool_loop e =
   | IfThenElse (x, y, z) -> 
     let a, b = bool_loop x in
     if b then 
-      if a then bool_loop y
-      else bool_loop z
+      let c = bool_loop y in
+        let d = bool_loop z in
+        if c = d then
+          if a then c
+          else d
+        else false, false
     else false, false
   | Or (x, y) -> 
     (match (x, y) with
@@ -40,10 +44,12 @@ let rec num_loop e =
   | IfThenElse (x, y, z) ->
     let a, b = bool_loop x in
     if b then
-      if a
-        then num_loop y
-      else
-        num_loop z
+      let c = num_loop y in
+      let d = num_loop z in
+      if c = d then
+        if a then c
+        else d
+      else false
     else false
 (* let type_of e = 
   match e with
@@ -65,10 +71,12 @@ let type_of e =
     | IfThenElse (x, y, z) ->
       let a, b = bool_loop x in
       if b then
-        if a
-          then primitive_loop y
-        else
-          primitive_loop z
+        let c = primitive_loop y in
+        let d = primitive_loop z in
+        if c = d then
+          if a then c
+          else d
+        else None
       else None
     in
   primitive_loop e
