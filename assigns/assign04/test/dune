@@ -1,7 +1,7 @@
 (tests
  (names
   test_assign04_01
-  ; test_assign04_02
+  test_assign04_02
   ; test_assign04_03
   ; test_assign04_04
   )
