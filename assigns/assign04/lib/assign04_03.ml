@@ -11,11 +11,7 @@ let rec bool_loop e =
   | IfThenElse (x, y, z) -> 
       if bool_loop x then bool_loop y
       else bool_loop z
-  | Or (x, y) -> 
-    (match (x, y) with
-      | (True, _) | (_, True) -> true
-      | (False, False) -> false
-      | (_, _) -> (bool_loop x) || (bool_loop y))
+  | Or (x, y) -> (bool_loop x) || (bool_loop y)
   | _ -> false
 
 let rec num_loop e =
