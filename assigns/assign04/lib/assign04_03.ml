@@ -10,12 +10,12 @@ let rec bool_loop e =
   | False -> false
   | IfThenElse (x, y, z) -> 
       if bool_loop x then bool_loop y
-        else bool_loop z
+      else bool_loop z
   | Or (x, y) -> 
     (match (x, y) with
-      | (True, False) | (False, True) | (True, True) -> true
+      | (True, _) | (_, True) -> true
       | (False, False) -> false
-      | (_, _) -> bool_loop x || bool_loop y)
+      | (_, _) -> (bool_loop x) || (bool_loop y))
   | _ -> false
 
 let rec num_loop e =
@@ -23,8 +23,7 @@ let rec num_loop e =
   | Num x -> x
   | Add (x, y) -> (num_loop x) + (num_loop y)
   | IfThenElse (x, y, z) ->
-    if bool_loop x then
-      num_loop y
+    if bool_loop x then num_loop y
     else num_loop z
   | _ -> 0
   
@@ -34,11 +33,7 @@ let eval e =
     | True -> VBool true
     | False -> VBool false
     | Num x -> VNum x
-    | Or (x, y) ->
-      (match (x, y) with
-      | (True, _) | (_, True) -> VBool true
-      | (False, False) -> VBool false
-      | _ -> VBool false)
+    | Or (x, y) -> VBool ((bool_loop x) || (bool_loop y))
     | Add (x, y) -> VNum (num_loop x + num_loop y)
     | IfThenElse (x, y, z) ->
       if bool_loop x then primitive_loop y
