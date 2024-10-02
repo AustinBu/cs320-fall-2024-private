@@ -51,9 +51,6 @@ let rec num_loop e =
         else d
       else false
     else false
-(* let type_of e = 
-  match e with
-  | _ -> None *)
 
 let type_of e =
   let rec primitive_loop e =
