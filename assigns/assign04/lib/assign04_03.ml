@@ -30,9 +30,9 @@ let eval e =
     | False -> VBool false
     | Num x -> VNum x
     | Or (x, y) -> VBool ((bool_loop x) || (bool_loop y))
-    | Add (x, y) -> VNum (num_loop x + num_loop y)
+    | Add (x, y) -> VNum ((num_loop x) + (num_loop y))
     | IfThenElse (x, y, z) ->
       if bool_loop x then primitive_loop y
       else primitive_loop z
-    in
-    primitive_loop e
+  in
+  primitive_loop e
