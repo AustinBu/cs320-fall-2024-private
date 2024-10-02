@@ -12,45 +12,37 @@ type ty =
 
 let rec bool_loop e =
   match e with
-  | Num _ | Add (_, _) -> false, false
-  | True -> true, true
-  | False -> false, true
+  | True -> true
+  | False -> true
   | IfThenElse (x, y, z) -> 
-    let a, b = bool_loop x in
+    let b = bool_loop x in
     if b then 
       let c = bool_loop y in
         let d = bool_loop z in
-        if c = d then
-          if a then c
-          else d
-        else false, false
-    else false, false
+        if c = d then c
+        else false
+    else false
   | Or (x, y) -> 
-    (match (x, y) with
-      | (True, False) | (False, True) | (True, True) -> true, true
-      | (False, False) -> false, true
-      | (_, _) -> 
-        let a = bool_loop x in
-        let b = bool_loop y in
-        if snd a && snd b then
-          fst a || fst b, true
-        else false, false)
+    let a = bool_loop x in
+    let b = bool_loop y in
+    if a && b then
+      true
+    else false
+  | _ -> false
 
 let rec num_loop e =
   match e with
-  | Or (_, _) | True | False -> false
   | Num _ -> true
   | Add (x, y) -> num_loop x && num_loop y
   | IfThenElse (x, y, z) ->
-    let a, b = bool_loop x in
+    let b = bool_loop x in
     if b then
       let c = num_loop y in
       let d = num_loop z in
-      if c = d then
-        if a then c
-        else d
+      if c = d then c
       else false
     else false
+  | _ -> false
 
 let type_of e =
   let rec primitive_loop e =
@@ -59,20 +51,19 @@ let type_of e =
     | False -> Some Bool
     | Num _ -> Some Int
     | Or (x, y) -> 
-      (match (x, y) with
-      | (True, True) | (False, True) | (True, False) | (False, False) -> Some Bool
-      |(_, _) -> None)
+      let a = bool_loop x in
+      let b = bool_loop y in
+      if a && b then Some Bool
+      else None
     | Add (x, y) ->
       if num_loop x && num_loop y then Some Int
       else None
     | IfThenElse (x, y, z) ->
-      let a, b = bool_loop x in
+      let b = bool_loop x in
       if b then
         let c = primitive_loop y in
         let d = primitive_loop z in
-        if c = d then
-          if a then c
-          else d
+        if c = d then c
         else None
       else None
     in
