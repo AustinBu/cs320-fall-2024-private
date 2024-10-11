@@ -45,7 +45,8 @@ module FuncSet = struct
   let card s =
     let rec count c x =
       if x > s.mx then c
-      else count (c + 1) (x + 1)
+      else if s.ind x then count (c + 1) (x + 1)
+      else count c (x + 1)
     in
     count 0 s.mn
 
