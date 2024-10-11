@@ -11,21 +11,24 @@ type expr =
 
 type ctxt = (ident * ty) list
 
-let rec loop gamma x =
-  match gamma with
-  | [] -> None
-  | (y, t) :: rest -> if x = y then Some t else loop rest x
-
 let rec type_of gamma e =
+  let rec loop gamma x =
+    match gamma with
+    | [] -> None
+    | head :: rest ->
+      if x = (fst head) then Some (snd head)
+      else loop rest x
+    in
   match e with
-  | Var x ->
-      loop gamma x
-  | Fun (x, y, e) ->
-      let gamma' = (x, y) :: gamma in
-      (match type_of gamma' e with
-      | Some a -> Some (Arr (y, a))
-      | None -> None)
-  | App (e1, e2) ->
-      (match type_of gamma e1, type_of gamma e2 with
-      | Some (Arr (a, t)), Some b when a = b -> Some t
-      | _ -> None)
+  | Var x -> loop gamma x
+  | Fun (a, b, c) ->
+    let g = (a, b) :: gamma in
+    (match type_of g c with
+    | Some x -> Some (Arr (b, x))
+    | None -> None)
+  | App (a, b) ->
+    (match type_of gamma a, type_of gamma b with
+    | Some (Arr (x, y)), Some z -> 
+      if x = z then Some y
+      else None
+    | _ -> None)
