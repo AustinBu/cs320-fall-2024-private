@@ -23,7 +23,7 @@ let rec type_of gamma e =
   | Var x -> loop gamma x
   | Fun (a, b, c) ->
     let g = (a, b) :: gamma in
-    (match type_of g e with
+    (match type_of g c with
     | Some x -> Some (Arr (b, x))
     | None -> None)
   | App (a, b) ->
