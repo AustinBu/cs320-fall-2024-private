@@ -14,5 +14,5 @@ let rec type_of (e : expr) : ty option =
   | Ite (x, y, z) ->
     (match type_of x, type_of y, type_of z with
     | Some TBool, Some t1, Some t2 -> 
-      if t1 = t2 then t1 else None
+      if t1 = t2 then Some t1 else None
     | _ -> None)
