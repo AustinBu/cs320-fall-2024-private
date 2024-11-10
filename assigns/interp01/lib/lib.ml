@@ -10,9 +10,19 @@ let eval_value (v : value) : expr =
   | VUnit -> Unit
   | VFun (x, body) -> Fun (x, body)
 
-let rec subst v x e = 
+let rec fv expr =
+  match expr with
+  | Var x -> [x]
+  | App (e1, e2) -> (fv e1) @ (fv e2)
+  | Bop (_, e1, e2) -> (fv e1) @ (fv e2)
+  | Let (v, e1, e2) -> (fv e1) @ (List.filter (fun fv -> fv <> v) (fv e2))
+  | Fun (v, e) -> List.filter (fun fv -> fv <> v) (fv e)
+  | If (e1, e2, e3) -> (fv e1) @ (fv e2) @ (fv e3)
+  | _ -> []
+
+let rec subst (v : value) x e : expr = 
   match e with
-  | Var y -> if y = x then v else e
+  | Var y -> if y = x then eval_value v else e
   | App (e1, e2) -> App (subst v x e1, subst v x e2)
   | Bop (op, e1, e2) -> Bop (op, subst v x e1, subst v x e2)
   | If (cond, e1, e2) -> If (subst v x cond, subst v x e1, subst v x e2)
@@ -21,7 +31,8 @@ let rec subst v x e =
       else Let (y, subst v x e1, subst v x e2)
   | Fun (y, body) -> 
       if y = x then e 
-      else Fun (y, subst v x body)
+      (* else Fun (gensym (), subst v x (subst v x body)) *)
+      else Fun (y, subst v x body) 
   | _ -> e
 
 let eval_bop op v1 v2 =
@@ -41,44 +52,51 @@ let eval_bop op v1 v2 =
   | Or, VBool x, VBool y -> Ok (VBool (x || y))
   | _ -> Error (InvalidArgs op)
 
-let rec eval (e : expr) (env : env) : (value, error) result =
-  match e with
-  | Num n -> Ok (VNum n)
-  | True -> Ok (VBool true)
-  | False -> Ok (VBool false)
-  | Unit -> Ok VUnit
-  | Var x -> 
-      (match List.assoc_opt x env with
-       | Some v -> Ok v
-       | None -> Error (UnknownVar x))
-  | Let (x, e1, e2) -> 
-      (match eval e1 env with
-       | Ok v1 -> eval e2 ((x, v1) :: env)
-       | Error err -> Error err)
-  | Fun (x, body) -> Ok (VFun (x, body))
-  | App (e1, e2) ->
-      (match eval e1 env with
-       | Ok (VFun (x, body)) ->
-           (match eval e2 env with
-            | Ok v2 -> eval (subst (eval_value v2) x body) env
-            | Error err -> Error err)
-       | Ok _ -> Error InvalidApp
-       | Error err -> Error err)
-  | Bop (op, e1, e2) -> 
-      (match eval e1 env with
-       | Ok v1 -> 
-           (match eval e2 env with
-            | Ok v2 -> eval_bop op v1 v2
-            | Error err -> Error err)
-       | Error err -> Error err)
-  | If (cond, e1, e2) ->
-      (match eval cond env with
-       | Ok (VBool true) -> eval e1 env
-       | Ok (VBool false) -> eval e2 env
-       | Ok _ -> Error InvalidIfCond
-       | Error err -> Error err)
+let eval e =
+  let rec loop e env =
+    match e with
+    | Num n -> Ok (VNum n)
+    | True -> Ok (VBool true)
+    | False -> Ok (VBool false)
+    | Unit -> Ok VUnit
+    | Var x -> 
+        (match List.assoc_opt x env with
+        | Some v -> Ok v
+        | None -> Error (UnknownVar x))
+    | Let (x, e1, e2) -> 
+        (match loop e1 env with
+        | Ok v1 -> loop e2 ((x, v1) :: env)
+        | Error err -> Error err)
+    | Fun (x, body) -> Ok (VFun (x, body))
+    | App (e1, e2) ->
+        (match loop e1 env with
+        | Ok (VFun (x, body)) ->
+            (match loop e2 env with
+              | Ok v2 ->
+            (match v2 with 
+              | VFun (v, e) -> if List.mem v (fv body) then loop (subst (VFun (gensym (), e)) x body) env else loop (subst v2 x body) env
+              | _ -> loop (subst v2 x body) env)
+              | Error err -> Error err)
+        | Ok _ -> Error InvalidApp
+        | Error err -> Error err)
+    | Bop (op, e1, e2) -> 
+        (match loop e1 env with
+        | Ok v1 -> 
+            (match loop e2 env with
+              | Ok v2 -> eval_bop op v1 v2
+              | Error err -> Error err)
+        | Error err -> Error err)
+    | If (cond, e1, e2) ->
+        (match loop cond env with
+        | Ok (VBool true) -> loop e1 env
+        | Ok (VBool false) -> loop e2 env
+        | Ok _ -> Error InvalidIfCond
+        | Error err -> Error err)
+in loop e []
+
+let parse s = My_parser.parse s
 
 let interp s =
-  match (My_parser.parse s) with
+  match (parse s) with
   | None -> Error ParseFail
-  | Some p -> eval p []
+  | Some p -> eval p
