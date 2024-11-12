@@ -10,30 +10,38 @@ let eval_value (v : value) : expr =
   | VUnit -> Unit
   | VFun (x, body) -> Fun (x, body)
 
-let rec fv expr =
+let rec rn old neu expr =
   match expr with
-  | Var x -> [x]
-  | App (e1, e2) -> (fv e1) @ (fv e2)
-  | Bop (_, e1, e2) -> (fv e1) @ (fv e2)
-  | Let (v, e1, e2) -> (fv e1) @ (List.filter (fun fv -> fv <> v) (fv e2))
-  | Fun (v, e) -> List.filter (fun fv -> fv <> v) (fv e)
-  | If (e1, e2, e3) -> (fv e1) @ (fv e2) @ (fv e3)
-  | _ -> []
+  | Var y -> if y = old then Var neu else expr
+  | App (e1, e2) -> App (rn old neu e1, rn old neu e2)
+  | Bop (b, e1, e2) -> Bop (b, rn old neu e1, rn old neu e2)
+  | If (cond, bthen, belse) ->
+      If (rn old neu cond, rn old neu bthen, rn old neu belse)
+  | Let (y, e1, e2) ->
+      if y = old then Let (y, rn old neu e1, e2)
+      else Let (y, rn old neu e1, rn old neu e2)
+  | Fun (y, body) ->
+      if y = old then Fun (y, body)
+      else Fun (y, rn old neu body)
+  | _ -> expr
 
-let rec subst (v : value) x e : expr = 
-  match e with
-  | Var y -> if y = x then eval_value v else e
-  | App (e1, e2) -> App (subst v x e1, subst v x e2)
-  | Bop (op, e1, e2) -> Bop (op, subst v x e1, subst v x e2)
-  | If (cond, e1, e2) -> If (subst v x cond, subst v x e1, subst v x e2)
-  | Let (y, e1, e2) -> 
-      if y = x then Let (y, subst v x e1, e2) 
-      else Let (y, subst v x e1, subst v x e2)
-  | Fun (y, body) -> 
-      if y = x then e 
-      (* else Fun (gensym (), subst v x (subst v x body)) *)
-      else Fun (y, subst v x body) 
-  | _ -> e
+let subst (v : value) x e : expr = 
+  let rec loop v x e (env : string list) = 
+    match e with
+    | Var y -> if y = x then eval_value v else e
+    | App (e1, e2) -> App (loop v x e1 env, loop v x e2 env)
+    | Bop (op, e1, e2) -> Bop (op, loop v x e1 env, loop v x e2 env)
+    | If (cond, e1, e2) -> If (loop v x cond env, loop v x e1 env, loop v x e2 env)
+    | Let (y, e1, e2) -> 
+        if y = x then Let (y, loop v x e1 env, e2) 
+        else if List.mem y env then let y' = gensym () in Let (y', loop v x e1 env, loop v x (rn y y' e2) (y' :: env)) 
+        else Let (y, loop v x e1 env, loop v x e2 env)
+    | Fun (y, body) -> 
+        if y = x then e 
+        else if List.mem y env then let y' = gensym () in Fun (y', loop v x (rn y y' body) (y' :: env)) 
+        else Fun (y, loop v x body env) 
+    | _ -> e
+  in loop v x e []
 
 let eval_bop op v1 v2 =
   match op, v1, v2 with
@@ -48,12 +56,27 @@ let eval_bop op v1 v2 =
   | Gte, VNum x, VNum y -> Ok (VBool (x >= y))
   | Eq, VNum x, VNum y -> Ok (VBool (x = y))
   | Neq, VNum x, VNum y -> Ok (VBool (x <> y))
-  | And, VBool x, VBool y -> Ok (VBool (x && y))
-  | Or, VBool x, VBool y -> Ok (VBool (x || y))
+  | And, VBool x, VBool y -> 
+    (match x with 
+    | false -> Ok (VBool false)
+    | _ -> Ok (VBool (x && y)))
+  | And, VBool x, _ -> 
+      (match x with 
+      | false -> Ok (VBool false)
+      | _ -> Error (InvalidArgs op))
+  | Or, VBool x, VBool y -> 
+    (match x with 
+    | true -> Ok (VBool true)
+    | _ -> Ok (VBool (x || y)))
+  | Or, VBool x, _ -> 
+    (match x with 
+    | true -> Ok (VBool true)
+    | _ -> Error (InvalidArgs op))
   | _ -> Error (InvalidArgs op)
 
 let eval e =
-  let rec loop e env =
+  let rec loop e env depth =
+    if depth > 1000 then Error InvalidApp else
     match e with
     | Num n -> Ok (VNum n)
     | True -> Ok (VBool true)
@@ -64,35 +87,32 @@ let eval e =
         | Some v -> Ok v
         | None -> Error (UnknownVar x))
     | Let (x, e1, e2) -> 
-        (match loop e1 env with
-        | Ok v1 -> loop e2 ((x, v1) :: env)
+        (match loop e1 env (depth + 1) with
+        | Ok v1 -> loop e2 ((x, v1) :: env) (depth + 1)
         | Error err -> Error err)
     | Fun (x, body) -> Ok (VFun (x, body))
     | App (e1, e2) ->
-        (match loop e1 env with
+        (match loop e1 env (depth + 1) with
         | Ok (VFun (x, body)) ->
-            (match loop e2 env with
-              | Ok v2 ->
-            (match v2 with 
-              | VFun (v, e) -> if List.mem v (fv body) then loop (subst (VFun (gensym (), e)) x body) env else loop (subst v2 x body) env
-              | _ -> loop (subst v2 x body) env)
+            (match loop e2 env (depth + 1) with
+              | Ok v2 -> loop (subst (v2) x body) env (depth + 1)
               | Error err -> Error err)
         | Ok _ -> Error InvalidApp
         | Error err -> Error err)
     | Bop (op, e1, e2) -> 
-        (match loop e1 env with
+        (match loop e1 env (depth + 1) with
         | Ok v1 -> 
-            (match loop e2 env with
+            (match loop e2 env (depth + 1) with
               | Ok v2 -> eval_bop op v1 v2
               | Error err -> Error err)
         | Error err -> Error err)
     | If (cond, e1, e2) ->
-        (match loop cond env with
-        | Ok (VBool true) -> loop e1 env
-        | Ok (VBool false) -> loop e2 env
+        (match loop cond env (depth + 1) with
+        | Ok (VBool true) -> loop e1 env (depth + 1)
+        | Ok (VBool false) -> loop e2 env (depth + 1)
         | Ok _ -> Error InvalidIfCond
         | Error err -> Error err)
-in loop e []
+in loop e [] 0
 
 let parse s = My_parser.parse s
 
