@@ -88,7 +88,7 @@ let eval e =
         | None -> Error (UnknownVar x))
     | Let (x, e1, e2) -> 
         (match loop e1 env (depth + 1) with
-        | Ok v1 -> loop e2 ((x, v1) :: env) (depth + 1)
+        | Ok v1 -> loop (subst v1 x e2) ((x, v1) :: env) (depth + 1)
         | Error err -> Error err)
     | Fun (x, body) -> Ok (VFun (x, body))
     | App (e1, e2) ->
