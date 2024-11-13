@@ -10,38 +10,68 @@ let eval_value (v : value) : expr =
   | VUnit -> Unit
   | VFun (x, body) -> Fun (x, body)
 
-let rec rn old neu expr =
+let rec fv expr =
   match expr with
-  | Var y -> if y = old then Var neu else expr
-  | App (e1, e2) -> App (rn old neu e1, rn old neu e2)
-  | Bop (b, e1, e2) -> Bop (b, rn old neu e1, rn old neu e2)
-  | If (cond, bthen, belse) ->
-      If (rn old neu cond, rn old neu bthen, rn old neu belse)
-  | Let (y, e1, e2) ->
-      if y = old then Let (y, rn old neu e1, e2)
-      else Let (y, rn old neu e1, rn old neu e2)
-  | Fun (y, body) ->
-      if y = old then Fun (y, body)
-      else Fun (y, rn old neu body)
-  | _ -> expr
+  | Var x -> [x]
+  | App (e1, e2) | Bop (_, e1, e2) -> 
+      (fv e1) @ (fv e2)
+  | If (cond, e1, e2) -> 
+      (fv cond) @ (fv e1) @ (fv e2)
+  | Let (x, e1, e2) -> 
+      let free_e1 = fv e1 in
+      let free_e2 = fv e2 in
+      List.filter (fun v -> v <> x) (free_e1 @ free_e2)
+  | Fun (x, body) -> 
+      List.filter (fun v -> v <> x) (fv body)
+  | _ -> []
 
-let subst (v : value) x e : expr = 
-  let rec loop v x e (env : string list) = 
+let rec find_binding y expr =
+  match expr with
+  | Var x -> if x = y then Some (Var x) else None
+  | App (e1, e2) | Bop (_, e1, e2) -> 
+      (match find_binding y e1 with
+      | Some _ as result -> result
+      | None -> find_binding y e2)
+  | If (cond, e1, e2) -> 
+      (match find_binding y cond with
+      | Some _ as result -> result
+      | None -> 
+          (match find_binding y e1 with
+          | Some _ as result -> result
+          | None -> find_binding y e2))
+  | Let (x, e1, e2) -> 
+      if x = y then Some (Var x)
+      else
+        let binding_in_e1 = find_binding y e1 in
+        (match binding_in_e1 with
+        | Some _ as result -> result
+        | None -> find_binding y e2)
+  | Fun (x, body) -> 
+      if x = y then Some (Fun (x, body))
+      else find_binding y body
+  | _ -> None
+
+let rec subst (v : value) x e : expr = 
     match e with
     | Var y -> if y = x then eval_value v else e
-    | App (e1, e2) -> App (loop v x e1 env, loop v x e2 env)
-    | Bop (op, e1, e2) -> Bop (op, loop v x e1 env, loop v x e2 env)
-    | If (cond, e1, e2) -> If (loop v x cond env, loop v x e1 env, loop v x e2 env)
+    | App (e1, e2) -> App (subst v x e1, subst v x e2)
+    | Bop (op, e1, e2) -> Bop (op, subst v x e1, subst v x e2)
+    | If (cond, e1, e2) -> If (subst v x cond, subst v x e1, subst v x e2)
     | Let (y, e1, e2) -> 
-        if y = x then Let (y, loop v x e1 env, e2) 
-        else if List.mem y env then let y' = gensym () in Let (y', loop v x e1 env, loop v x (rn y y' e2) (y' :: env)) 
-        else Let (y, loop v x e1 env, loop v x e2 (y :: env))
+        if y = x then Let (y, subst v x e1, e2) 
+        else if List.mem y (fv (eval_value v)) then
+          (match find_binding y e2 with 
+          | Some b -> let y' = gensym () in Let (y', subst v x e1, subst v x (subst (VFun (y, b)) y e2)) 
+          | None -> Let (y, subst v x e1, subst v x e2))
+        else Let (y, subst v x e1, subst v x e2)
     | Fun (y, body) -> 
-        if y = x then e 
-        else if List.mem y env then let y' = gensym () in Fun (y', loop v x (rn y y' body) (y' :: env)) 
-        else Fun (y, loop v x body (y ::env)) 
+        if y = x then e
+        else if List.mem y (fv (eval_value v)) then
+          (match find_binding y body with
+          | Some b -> let y' = gensym () in Fun (y', subst v x (subst (VFun (y, b)) y body))
+          | None -> Fun (y, subst v x body))
+        else Fun (y, subst v x body)
     | _ -> e
-  in loop v x e []
 
 let eval_bop op v1 v2 =
   match op, v1, v2 with
