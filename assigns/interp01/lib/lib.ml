@@ -35,11 +35,11 @@ let subst (v : value) x e : expr =
     | Let (y, e1, e2) -> 
         if y = x then Let (y, loop v x e1 env, e2) 
         else if List.mem y env then let y' = gensym () in Let (y', loop v x e1 env, loop v x (rn y y' e2) (y' :: env)) 
-        else Let (y, loop v x e1 env, loop v x e2 env)
+        else Let (y, loop v x e1 env, loop v x e2 (y :: env))
     | Fun (y, body) -> 
         if y = x then e 
         else if List.mem y env then let y' = gensym () in Fun (y', loop v x (rn y y' body) (y' :: env)) 
-        else Fun (y, loop v x body env) 
+        else Fun (y, loop v x body (y ::env)) 
     | _ -> e
   in loop v x e []
 
