@@ -19,11 +19,11 @@ rule read =
   | "false" { FALSE }
   | "()" { UNIT }
   | "->" { ARROW }
-  | "+" { ADD }
-  | "-" { SUB }
   | "*" { MUL }
   | "/" { DIV }
   | "mod" { MOD }
+  | "+" { ADD }
+  | "-" { SUB }
   | "<" { LT }
   | "<=" { LTE }
   | ">" { GT }

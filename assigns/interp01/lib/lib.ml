@@ -25,31 +25,14 @@ let rec fv expr =
       List.filter (fun v -> v <> x) (fv body)
   | _ -> []
 
-let rec find_binding y expr =
-  match expr with
-  | Var x -> if x = y then Some (Var x) else None
-  | App (e1, e2) | Bop (_, e1, e2) -> 
-      (match find_binding y e1 with
-      | Some _ as result -> result
-      | None -> find_binding y e2)
-  | If (cond, e1, e2) -> 
-      (match find_binding y cond with
-      | Some _ as result -> result
-      | None -> 
-          (match find_binding y e1 with
-          | Some _ as result -> result
-          | None -> find_binding y e2))
-  | Let (x, e1, e2) -> 
-      if x = y then Some (Var x)
-      else
-        let binding_in_e1 = find_binding y e1 in
-        (match binding_in_e1 with
-        | Some _ as result -> result
-        | None -> find_binding y e2)
-  | Fun (x, body) -> 
-      if x = y then Some (Fun (x, body))
-      else find_binding y body
-  | _ -> None
+let replace_var x y =
+  let rec go = function
+    | Var z -> if z = y then Var x else Var z
+    | App (e1, e2) -> App (go e1, go e2)
+    | Fun (z, e) -> if z = y then Fun (z, e) else Fun (z, go e)
+    | Let (z, e1, e2) -> if z = y then Let (z, go e1, e2) else Let(z, go e1, go e2)
+    | e -> e
+  in go
 
 let rec subst (v : value) x e : expr = 
     match e with
@@ -60,16 +43,12 @@ let rec subst (v : value) x e : expr =
     | Let (y, e1, e2) -> 
         if y = x then Let (y, subst v x e1, e2) 
         else if List.mem y (fv (eval_value v)) then
-          (match find_binding y e2 with 
-          | Some b -> let y' = gensym () in Let (y', subst v x e1, subst v x (subst (VFun (y, b)) y e2)) 
-          | None -> Let (y, subst v x e1, subst v x e2))
+          let y' = gensym () in Let (y', subst v x e1, subst v x (replace_var y' y e2)) 
         else Let (y, subst v x e1, subst v x e2)
     | Fun (y, body) -> 
         if y = x then e
         else if List.mem y (fv (eval_value v)) then
-          (match find_binding y body with
-          | Some b -> let y' = gensym () in Fun (y', subst v x (subst (VFun (y, b)) y body))
-          | None -> Fun (y, subst v x body))
+           let y' = gensym () in Fun (y', subst v x (replace_var y' y body))
         else Fun (y, subst v x body)
     | _ -> e
 

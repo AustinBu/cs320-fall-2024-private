@@ -47,11 +47,11 @@ expr3:
   | LPAREN; e=expr; RPAREN { e }
 
 %inline bop:
-  | ADD { Add }
-  | SUB { Sub }
   | MUL { Mul }
   | DIV { Div }
   | MOD { Mod }
+  | ADD { Add }
+  | SUB { Sub }
   | LT { Lt }
   | LTE { Lte }
   | GT { Gt }
