@@ -3,6 +3,7 @@ open Utils
 exception AssertFail
 exception DivByZero
 
+
 let eval_bop op v1 v2 =
   match (op, v1, v2) with
   | (Add, VNum n1, VNum n2) -> VNum (n1 + n2)
@@ -18,15 +19,11 @@ let eval_bop op v1 v2 =
   | (Gte, VNum n1, VNum n2) -> VBool (n1 >= n2)
   | (Eq, VNum n1, VNum n2) -> VBool (n1 = n2)
   | (Neq, VNum n1, VNum n2) -> VBool (n1 <> n2)
-  | (And, VBool b1, b2) -> 
-    (match b1 with
-    | false -> VBool (false)
-    | _ -> 
-      (match b2 with
-      | VBool b -> VBool (b1 && b)
-      | _ -> failwith "Invalid binary"))
-  | (Or, VBool b1, VBool _) -> VBool (b1)
-  | _ -> failwith "Invalid binary operation"
+  | (And, VBool b1, VBool b2) -> VBool (b1 && b2)
+  | (And, VBool false, _) -> (VBool false)
+  | (Or, VBool b1, VBool b2) -> VBool (b1 || b2)
+  | (Or, VBool true, _) -> (VBool true)
+  | _ -> failwith "3"
 
 let eval expr =
   let rec loop env expr =
@@ -35,37 +32,52 @@ let eval expr =
     | True -> VBool true
     | False -> VBool false
     | Num n -> VNum n
-    | Var x -> Env.find x env
-    | Bop (op, e1, e2) ->
+    | Var x -> 
+      (* print_endline x;  *)
+      Env.find x env
+    | Bop (op, e1, e2) -> 
+      (* print_endline "bop"; *)
         let v1 = loop env e1 in
         let v2 = loop env e2 in
         eval_bop op v1 v2
-    | If (cond, e1, e2) -> (
-        match loop env cond with
+    | If (cond, e1, e2) -> 
+      (* print_endline "if"; *)
+      (match loop env cond with
         | VBool true -> loop env e1
         | VBool false -> loop env e2
-        | _ -> failwith "if is not bool")
-    | Fun (arg, _, body) -> VClos { name = None; arg; body; env = env}
-    | App (f, arg) -> (
-        match loop env f with
-        | VClos { name = _; arg = param; body; env = closure_env } ->
+        | _ -> failwith "4")
+    | Fun (arg, _, body) -> 
+      (* print_endline "fun"; *)
+      VClos { name = None; arg; body; env = env}
+    | App (f, arg) -> 
+      (* print_endline "app"; *)
+      (match loop env f with
+        | VClos { name = None; arg = param; body; env = closure_env } ->
             let arg_val = loop env arg in
             let env' = Env.add param arg_val closure_env in
             loop env' body
-        | _ -> failwith "Application of a non-function")
-    | Let { is_rec; name; ty; value; body } ->
-        let rec_env =
-          if is_rec then
-            Env.add name (loop env (Let { is_rec = false; name; ty; value; body = value })) env
-          else env
-        in
-        let value_val = loop rec_env value in
+        | VClos { name = Some fname; arg = param; body; env = closure_env } ->
+          let arg_val = loop env arg in
+          let env' = Env.add fname (VClos { name = Some fname; arg = param; body; env = closure_env }) closure_env in
+          loop (Env.add param arg_val env') body
+        | _ -> failwith "5")
+    | Let { is_rec; name; ty=_; value; body } ->
+      (* print_endline "let"; *)
+      if is_rec then
+        (match loop env value with
+        | VClos { name=_; arg = param; body = nbody; env = closure_env } -> 
+          let value_val = VClos {name=Some name; arg = param; body=nbody; env = closure_env} in
+          loop (Env.add name value_val env) body
+        | _ -> failwith "7")
+      else
+        let value_val = loop env value in
         loop (Env.add name value_val env) body
-    | Assert e -> (
-        match loop env e with
+    | Assert e -> 
+      (* print_endline "assert"; *)
+      (match loop env e with
         | VBool true -> VUnit
         | VBool false -> raise AssertFail
-        | _ -> failwith "assert is not bool")
+        | _ -> failwith "6")
   in loop Env.empty expr
 
 
@@ -96,9 +108,13 @@ let type_of (e : expr) : (ty, error) result =
             match loop ctx e2 with
             | Error _ as err -> err
             | Ok t2 ->
-                if t2 <> expected_arg then
-                  Error (OpTyErrR (op, expected_arg, t2))
-                else Ok result_ty)
+              if t2 <> expected_arg then 
+              (match eval e1 with
+              | VBool b -> if (b && (op = Or) || ((not b) && (op = And))) 
+                then Ok result_ty 
+                else Error (OpTyErrR (op, expected_arg, t2))
+              | _ -> Error (OpTyErrR (op, expected_arg, t2)))
+              else Ok result_ty)
   | If (cond, e1, e2) -> (
       match loop ctx cond with
       | Ok BoolTy -> (
@@ -207,3 +223,4 @@ let interp s =
     match type_of newp with
     | Ok _ -> Ok (eval newp)
     | Error _ as err -> err
+
