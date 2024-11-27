@@ -3,13 +3,6 @@ open Utils
 exception AssertFail
 exception DivByZero
 
-let rec lookup env x =
-  match env with
-  | [] -> failwith ("Unbound variable: " ^ x)
-  | (y, v) :: rest -> if x = y then v else lookup rest x
-
-let extend env x v = (x, v) :: env
-
 let eval_bop op v1 v2 =
   match (op, v1, v2) with
   | (Add, VNum n1, VNum n2) -> VNum (n1 + n2)
@@ -25,8 +18,14 @@ let eval_bop op v1 v2 =
   | (Gte, VNum n1, VNum n2) -> VBool (n1 >= n2)
   | (Eq, VNum n1, VNum n2) -> VBool (n1 = n2)
   | (Neq, VNum n1, VNum n2) -> VBool (n1 <> n2)
-  | (And, VBool b1, VBool b2) -> VBool (b1 && b2)
-  | (Or, VBool b1, VBool b2) -> VBool (b1 || b2)
+  | (And, VBool b1, b2) -> 
+    (match b1 with
+    | false -> VBool (false)
+    | _ -> 
+      (match b2 with
+      | VBool b -> VBool (b1 && b)
+      | _ -> failwith "Invalid binary"))
+  | (Or, VBool b1, VBool _) -> VBool (b1)
   | _ -> failwith "Invalid binary operation"
 
 let eval expr =
@@ -36,7 +35,7 @@ let eval expr =
     | True -> VBool true
     | False -> VBool false
     | Num n -> VNum n
-    | Var x -> lookup env x
+    | Var x -> Env.find x env
     | Bop (op, e1, e2) ->
         let v1 = loop env e1 in
         let v2 = loop env e2 in
@@ -45,30 +44,29 @@ let eval expr =
         match loop env cond with
         | VBool true -> loop env e1
         | VBool false -> loop env e2
-        | _ -> failwith "Condition must loopuate to a Boolean")
-    (* | Fun (arg, _, body) -> VClos { name = None; arg; body; env = env } *)
-    (* | App (f, arg) -> (
+        | _ -> failwith "if is not bool")
+    | Fun (arg, _, body) -> VClos { name = None; arg; body; env = env}
+    | App (f, arg) -> (
         match loop env f with
         | VClos { name = _; arg = param; body; env = closure_env } ->
             let arg_val = loop env arg in
-            let env' = extend closure_env param arg_val in
+            let env' = Env.add param arg_val closure_env in
             loop env' body
-        | _ -> failwith "Application of a non-function") *)
+        | _ -> failwith "Application of a non-function")
     | Let { is_rec; name; ty; value; body } ->
         let rec_env =
           if is_rec then
-            extend env name (loop env (Let { is_rec = false; name; ty; value; body = value }))
+            Env.add name (loop env (Let { is_rec = false; name; ty; value; body = value })) env
           else env
         in
         let value_val = loop rec_env value in
-        loop (extend env name value_val) body
+        loop (Env.add name value_val env) body
     | Assert e -> (
         match loop env e with
         | VBool true -> VUnit
         | VBool false -> raise AssertFail
-        | _ -> failwith "Assertion must loopuate to a Boolean")
-    | _ -> VUnit
-  in loop [] expr
+        | _ -> failwith "assert is not bool")
+  in loop Env.empty expr
 
 
 let type_of (e : expr) : (ty, error) result =
@@ -204,4 +202,8 @@ let parse s = My_parser.parse s
 let interp s =
   match (parse s) with
   | None -> Error ParseErr
-  | Some p -> Ok (eval (desugar p))
+  | Some p -> 
+    let newp = desugar p in
+    match type_of newp with
+    | Ok _ -> Ok (eval newp)
+    | Error _ as err -> err
