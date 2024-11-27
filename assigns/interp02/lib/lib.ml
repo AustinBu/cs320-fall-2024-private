@@ -142,57 +142,53 @@ let type_of (e : expr) : (ty, error) result =
       | Error _ as err -> err)
   in loop [] e
 
+  open Utils
 
 let rec dexpr = function
   | SUnit -> Unit
   | STrue -> True
   | SFalse -> False
   | SNum n -> Num n
-  | SVar v -> Var v
-  | SFun { arg = (x, ty); args = []; body } -> Fun (x, ty, dexpr body)
-  | SFun { arg = (x, ty); args = (y, ty') :: args'; body } ->
-      dexpr (SFun { arg = (x, ty); args = []; body = SFun { arg = (y, ty'); args = args'; body } })
-  | SApp (f, arg) -> App (dexpr f, dexpr arg)
-  | SLet { is_rec; name; args = []; ty; value; body } ->
-      Let { is_rec; name; ty; value = dexpr value; body = dexpr body }
-  | SLet { is_rec; name; args = (x, ty') :: args'; ty; value; body } ->
-      dexpr
-        (SLet
-            { is_rec
-            ; name
-            ; args = []
-            ; ty
-            ; value =
-                SFun
-                  { arg = (x, ty')
-                  ; args = args'
-                  ; body = value
-                  }
-            ; body
-            })
-  | SIf (cond, then_branch, else_branch) ->
-      If (dexpr cond, dexpr then_branch, dexpr else_branch)
-  | SBop (op, e1, e2) -> Bop (op, dexpr e1, dexpr e2)
+  | SVar x -> Var x
+  | SFun { arg; args; body } ->
+    let rec make_fun args body =
+      match args with
+      | [] -> body
+      | (x, ty) :: xs -> Fun (x, ty, make_fun xs body)
+    in
+    Fun (fst arg, snd arg, make_fun args (dexpr body))
+  | SApp (f, x) -> App (dexpr f, dexpr x)
+  | SLet { is_rec; name; args; ty; value; body } ->
+    let value_expr =
+      match args with
+      | [] -> dexpr value
+      | _ ->
+        let rec make_fun args body =
+          match args with
+          | [] -> body
+          | (x, ty) :: xs -> Fun (x, ty, make_fun xs body)
+        in
+        make_fun args (dexpr value)
+    in
+    Let { is_rec; name; ty; value = value_expr; body = dexpr body }
+  | SIf (cond, then_, else_) ->
+    If (dexpr cond, dexpr then_, dexpr else_)
+  | SBop (op, left, right) ->
+    Bop (op, dexpr left, dexpr right)
   | SAssert e -> Assert (dexpr e)
 
-  let desugar prog =
-  let rec dtoplet = function
-    | [] -> Unit
-    | { is_rec; name; args; ty; value } :: rest ->
-        Let
-          { is_rec
-          ; name
-          ; ty
-          ; value =
-              (match args with
-              | [] -> dexpr value
-              | (x, ty') :: args' ->
-                dexpr (SFun { arg = (x, ty'); args = args'; body = value }))
-          ; body = dtoplet rest
-          }
-  in
-  dtoplet prog
-
+let desugar prog =
+  List.fold_right
+    (fun toplet acc ->
+      Let
+        { is_rec = toplet.is_rec
+        ; name = toplet.name
+        ; ty = toplet.ty
+        ; value = dexpr toplet.value
+        ; body = acc
+        })
+    prog
+    Unit
 
 let parse s = My_parser.parse s
 
