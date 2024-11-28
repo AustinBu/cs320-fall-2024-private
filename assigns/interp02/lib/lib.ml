@@ -19,10 +19,10 @@ let eval_bop op v1 v2 =
   | (Gte, VNum n1, VNum n2) -> VBool (n1 >= n2)
   | (Eq, VNum n1, VNum n2) -> VBool (n1 = n2)
   | (Neq, VNum n1, VNum n2) -> VBool (n1 <> n2)
+  | (And, VBool false, _) -> VBool false
   | (And, VBool b1, VBool b2) -> VBool (b1 && b2)
-  | (And, VBool false, _) -> (VBool false)
+  | (Or, VBool true, _) -> VBool true
   | (Or, VBool b1, VBool b2) -> VBool (b1 || b2)
-  | (Or, VBool true, _) -> (VBool true)
   | _ -> failwith "3"
 
 let eval expr =
@@ -38,8 +38,10 @@ let eval expr =
     | Bop (op, e1, e2) -> 
       (* print_endline "bop"; *)
         let v1 = loop env e1 in
+        (try eval_bop op v1 VUnit
+        with Failure _ ->
         let v2 = loop env e2 in
-        eval_bop op v1 v2
+        eval_bop op v1 v2)
     | If (cond, e1, e2) -> 
       (* print_endline "if"; *)
       (match loop env cond with
@@ -68,7 +70,7 @@ let eval expr =
         | VClos { name=_; arg = param; body = nbody; env = closure_env } -> 
           let value_val = VClos {name=Some name; arg = param; body=nbody; env = closure_env} in
           loop (Env.add name value_val env) body
-        | _ -> failwith "7")
+        | _ -> failwith "6")
       else
         let value_val = loop env value in
         loop (Env.add name value_val env) body
@@ -76,8 +78,7 @@ let eval expr =
       (* print_endline "assert"; *)
       (match loop env e with
         | VBool true -> VUnit
-        | VBool false -> raise AssertFail
-        | _ -> failwith "6")
+        | _ -> raise AssertFail)
   in loop Env.empty expr
 
 
@@ -109,12 +110,8 @@ let type_of (e : expr) : (ty, error) result =
             | Error _ as err -> err
             | Ok t2 ->
               if t2 <> expected_arg then 
-              (match eval e1 with
-              | VBool b -> if (b && (op = Or) || ((not b) && (op = And))) 
-                then Ok result_ty 
-                else Error (OpTyErrR (op, expected_arg, t2))
-              | _ -> Error (OpTyErrR (op, expected_arg, t2)))
-              else Ok result_ty)
+                Error (OpTyErrR (op, expected_arg, t2))
+                else Ok result_ty)
   | If (cond, e1, e2) -> (
       match loop ctx cond with
       | Ok BoolTy -> (
