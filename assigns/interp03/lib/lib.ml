@@ -40,6 +40,10 @@ let unify ty constraints : ty_scheme option =
     match constraints with
     | [] -> None
     | [TVar "$_out", t] -> Some t (* optimization to not build a full solution *)
+    | (TPair (t1, t2), TPair (t1', t2')) :: cs ->
+      go ((t1, t1') :: (t2, t2') :: cs)
+    | (TList t1, TList t2) :: cs | (TOption t1, TOption t2) :: cs->
+      go ((t1, t2) :: cs)
     | (t1, t2) :: cs when t1 = t2 -> go cs
     | (TFun (t1, t2), TFun (t1', t2')) :: cs ->
         go ((t1, t1') :: (t2, t2') :: cs)
