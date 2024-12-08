@@ -6,8 +6,6 @@ exception DivByZero
 exception RecWithoutArg
 exception CompareFunVals
 
-let eval_expr _ _ = assert false
-
 let ty_subst t x =
   let rec go = function
     | TUnit -> TUnit
@@ -186,14 +184,135 @@ let type_check =
     | None -> None
   in go Env.empty
 
-let eval p =
-  let rec nest = function
-    | [] -> Unit
-    | [{is_rec;name;value}] -> Let {is_rec;name;value;body = Var name}
-    | {is_rec;name;value} :: ls -> Let {is_rec;name;value;body = nest ls}
-  in eval_expr Env.empty (nest p)
+let eval_bop op v1 v2 =
+  let _ = match op with
+  | Lt | Lte | Gt | Gte | Eq | Neq ->
+    (match (v1, v2) with
+    | (VClos _, _) | (_, VClos _) -> raise CompareFunVals
+    | _ -> 0)
+  | _ -> 0
+  in
+  match (op, v1, v2) with
+  | (Add, VInt n1, VInt n2) -> VInt (n1 + n2)
+  | (Sub, VInt n1, VInt n2) -> VInt (n1 - n2)
+  | (Mul, VInt n1, VInt n2) -> VInt (n1 * n2)
+  | (Div, VInt _, VInt 0) -> raise DivByZero
+  | (Mod, VInt _, VInt 0) -> raise DivByZero
+  | (Mod, VInt n1, VInt n2) -> VInt (n1 mod n2)
+  | (AddF, VFloat n1, VFloat n2) -> VFloat (n1 +. n2)
+  | (SubF, VFloat n1, VFloat n2) -> VFloat (n1 -. n2)
+  | (MulF, VFloat n1, VFloat n2) -> VFloat (n1 *. n2)
+  | (DivF, VFloat n1, VFloat n2) -> VFloat (n1 /. n2)
+  | (PowF, VFloat n1, VFloat n2) -> VFloat (n1 ** n2)
+  | (Lt, v1, v2) -> VBool (v1 < v2)
+  | (Lte, v1, v2) -> VBool (v1 < v2) 
+  | (Gt, v1, v2) -> VBool (v1 < v2) 
+  | (Gte, v1, v2) -> VBool (v1 < v2) 
+  | (Eq, v1, v2) -> VBool (v1 = v2)
+  | (Neq, v1, v2) -> VBool (v1 <> v2)
+  | (And, VBool false, _) -> VBool false
+  | (And, VBool b1, VBool b2) -> VBool (b1 && b2)
+  | (Or, VBool true, _) -> VBool true
+  | (Or, VBool b1, VBool b2) -> VBool (b1 || b2)
+  | (Concat, VList v1, VList v2) -> VList (v1 @ v2)
+  | (Cons, v1, VList v2) -> VList (v1 :: v2)
+  | (Comma, v1, v2) -> VPair (v1, v2)
+  | _ -> failwith "3"
 
-  let interp input =
+let desugar prog =
+  let rec dtoplet prog = 
+    match prog with
+    | [] -> Unit
+    | { is_rec; name; value } :: rest ->
+      Let
+      { is_rec
+        ; name
+        ; value
+        ; body = dtoplet rest
+      }
+  in
+  dtoplet prog
+  
+let rec eval_expr env expr =
+  match expr with
+  | Unit -> VUnit
+  | True -> VBool true
+  | False -> VBool false
+  | Int n -> VInt n
+  | Float f -> VFloat f
+  | ENone -> VNone
+  | ESome e -> VSome (eval_expr env e)
+  | OptMatch { matched; some_name; some_case; none_case } ->
+    (match (eval_expr env matched) with
+    | VNone -> eval_expr env none_case
+    | VSome x -> eval_expr (Env.add some_name x env) some_case
+    | _ -> failwith "optmatch"
+    )
+  | Nil -> VList []
+  | ListMatch { matched; hd_name; tl_name; cons_case; nil_case } ->
+    (match (eval_expr env matched) with
+    | VList [] -> eval_expr env nil_case
+    | VList (h :: t) -> eval_expr (Env.add hd_name h (Env.add tl_name (VList t) env)) cons_case
+    | _ -> failwith "listmatch")
+  | PairMatch { matched; fst_name; snd_name; case } ->
+    (match (eval_expr env matched) with
+    | VPair (v1, v2) -> eval_expr (Env.add fst_name v1 (Env.add snd_name v2 env)) case
+    | _ -> failwith "pairmatch")
+  | Var x -> 
+    (* print_endline x;  *)
+    Env.find x env
+  | Annot (e1, _) -> eval_expr env e1
+  | Assert e -> 
+    (* print_endline "assert"; *)
+    (match eval_expr env e with
+    | VBool true -> VUnit
+    | _ -> raise AssertFail)
+  | Bop (op, e1, e2) -> 
+    (* print_endline "bop"; *)
+      let v1 = eval_expr env e1 in
+      (try eval_bop op v1 VUnit
+      with Failure _ ->
+      let v2 = eval_expr env e2 in
+      eval_bop op v1 v2)
+  | If (cond, e1, e2) -> 
+    (* print_endline "if"; *)
+    (match eval_expr env cond with
+      | VBool true -> eval_expr env e1
+      | VBool false -> eval_expr env e2
+      | _ -> failwith "4")
+  | Fun (arg, _, body) -> 
+    (* print_endline "fun"; *)
+    VClos { name = None; arg; body; env = env}
+  | App (f, arg) -> 
+    (* print_endline "app"; *)
+    (match eval_expr env f with
+      | VClos { name = None; arg = param; body; env = closure_env } ->
+          let arg_val = eval_expr env arg in
+          let env' = Env.add param arg_val closure_env in
+          eval_expr env' body
+      | VClos { name = Some fname; arg = param; body; env = closure_env } ->
+        let arg_val = eval_expr env arg in
+        let env' = Env.add fname (VClos { name = Some fname; arg = param; body; env = closure_env }) closure_env in
+        eval_expr (Env.add param arg_val env') body
+      | _ -> failwith "5")
+  | Let { is_rec; name; value; body } ->
+    (* print_endline "let"; *)
+    if is_rec then
+      (match eval_expr env value with
+      | VClos { name=n; arg = param; body = nbody; env = closure_env } -> 
+        if (n = None) then
+          let value_val = VClos {name=Some name; arg = param; body=nbody; env = closure_env} in
+          eval_expr (Env.add name value_val env) body
+        else raise RecWithoutArg
+      | _ -> failwith "6")
+    else
+      let value_val = eval_expr env value in
+      eval_expr (Env.add name value_val env) body
+
+let eval expr =
+  eval_expr Env.empty (desugar expr)
+
+let interp input =
   match parse input with
   | Some prog -> (
     match type_check prog with
