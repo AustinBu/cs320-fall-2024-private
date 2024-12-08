@@ -59,18 +59,6 @@ let unify ty constraints : ty_scheme option =
     let s = VarSet.to_list (fvs t') in
     Some (Forall (s, t'))
 
-let match_type type1 type2 type3 type4 =
-  if (type1 = type2) then
-  let ot = (match type4 with
-    | Some t -> t
-    | None -> type2) in
-  (match type3 with
-    | Some t -> 
-      if (t = type1) then ot
-      else failwith "match_type"
-    | None -> ot)
-  else failwith "match_type"
-
 let type_of' ctxt expr =
   let rec loop ( ctxt : stc_env ) expr =
     match expr with
@@ -98,11 +86,11 @@ let type_of' ctxt expr =
       let t1, c1 = loop ctxt e1 in
       let t2, c2 = loop ctxt e2 in
       (match op with
-      | Cons ->  (match_type (TList t1) t2 None None, (t2, TList t1) :: c1 @ c2)
-      | Add | Sub | Mul | Div | Mod -> (match_type t1 t2 (Some TInt) None, [(t1, TInt); (t2, TInt)] @ c1 @ c2)
-      | AddF | SubF | MulF | DivF | PowF ->  (match_type t1 t2 (Some TFloat) None, [(t1, TFloat); (t2, TFloat)] @ c1 @ c2)
-      | Lt | Lte | Gt | Gte | Eq | Neq ->  (match_type t1 t2 None (Some TBool), (t1, t2) :: c1 @ c2)
-      | And | Or ->  (match_type t1 t2 (Some TBool) None, [(t1, TBool); (t2, TBool)] @ c1 @ c2)
+      | Cons -> (TList t1, (t2, TList t1) :: c1 @ c2)
+      | Add | Sub | Mul | Div | Mod -> (TInt, [(t1, TInt); (t2, TInt)] @ c1 @ c2)
+      | AddF | SubF | MulF | DivF | PowF -> (TFloat, [(t1, TFloat); (t2, TFloat)] @ c1 @ c2)
+      | Lt | Lte | Gt | Gte | Eq | Neq ->  (TBool, (t1, t2) :: c1 @ c2)
+      | And | Or ->  (TBool, [(t1, TBool); (t2, TBool)] @ c1 @ c2)
       | Concat -> 
         let alpha = TList (TVar (gensym ())) in 
         (alpha, [(t1, alpha); (t2, alpha)] @ c1 @ c2)
@@ -111,7 +99,7 @@ let type_of' ctxt expr =
       let t1, c1 = loop ctxt e1 in
       let t2, c2 = loop ctxt e2 in
       let t3, c3 = loop ctxt e3 in
-      (match_type t2 t3 None None, [(t1, TBool); (t2, t3)] @ c1 @ c2 @ c3)
+      (t3, [(t1, TBool); (t2, t3)] @ c1 @ c2 @ c3)
     | Assert False -> TVar (gensym ()), []
     | Assert e -> 
       let t, c = loop ctxt e in
