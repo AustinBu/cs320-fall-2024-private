@@ -185,6 +185,7 @@ let eval_bop op v1 v2 =
   | (Sub, VInt n1, VInt n2) -> VInt (n1 - n2)
   | (Mul, VInt n1, VInt n2) -> VInt (n1 * n2)
   | (Div, VInt _, VInt 0) -> raise DivByZero
+  | (Div, VInt n1, VInt n2) -> VInt (n1 / n2)
   | (Mod, VInt _, VInt 0) -> raise DivByZero
   | (Mod, VInt n1, VInt n2) -> VInt (n1 mod n2)
   | (AddF, VFloat n1, VFloat n2) -> VFloat (n1 +. n2)
@@ -193,9 +194,9 @@ let eval_bop op v1 v2 =
   | (DivF, VFloat n1, VFloat n2) -> VFloat (n1 /. n2)
   | (PowF, VFloat n1, VFloat n2) -> VFloat (n1 ** n2)
   | (Lt, v1, v2) -> VBool (v1 < v2)
-  | (Lte, v1, v2) -> VBool (v1 < v2) 
-  | (Gt, v1, v2) -> VBool (v1 < v2) 
-  | (Gte, v1, v2) -> VBool (v1 < v2) 
+  | (Lte, v1, v2) -> VBool (v1 <= v2) 
+  | (Gt, v1, v2) -> VBool (v1 > v2) 
+  | (Gte, v1, v2) -> VBool (v1 >= v2) 
   | (Eq, v1, v2) -> VBool (v1 = v2)
   | (Neq, v1, v2) -> VBool (v1 <> v2)
   | (And, VBool false, _) -> VBool false
@@ -258,10 +259,8 @@ let rec eval_expr env expr =
   | Bop (op, e1, e2) -> 
     (* print_endline "bop"; *)
       let v1 = eval_expr env e1 in
-      (try eval_bop op v1 VUnit
-      with Failure _ ->
       let v2 = eval_expr env e2 in
-      eval_bop op v1 v2)
+      eval_bop op v1 v2
   | If (cond, e1, e2) -> 
     (* print_endline "if"; *)
     (match eval_expr env cond with
